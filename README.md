@@ -87,8 +87,8 @@ This repository contains **3 complete Data Science projects** built as part of t
 
 ```bash
 # Clone the repository
-git clone https://github.com/ronak25102-collab/DecodeLabs-DataScience.git
-cd DecodeLabs-DataScience
+git clone https://github.com/ronak25102-collab/decode_labs_projects.git
+cd decode_labs_projects
 
 # Install dependencies
 pip install -r requirements.txt
