@@ -1,20 +1,10 @@
-"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║           DECODELABS — DATA SCIENCE INDUSTRIAL TRAINING (2026)              ║
-║                                                                            ║
-║   PROJECT 3: Unsupervised Learning — Customer Segmentation                 ║
-║   Author : Ronak                                                           ║
-║   Goal   : Use distance-based algorithms to discover hidden mathematical   ║
-║            groupings in unlabeled retail data.                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-Key deliverables
-────────────────
-1. PCA — Reduce 22 features to 2-3 principal components
-2. Elbow Method + Silhouette Score — Mathematically prove optimal K
-3. K-Means Clustering — Segment customers into distinct groups
-4. Business Personas — Translate clusters into actionable insights
-"""
+# DecodeLabs - Data Science Industrial Training (Batch 2026)
+# Project 3: Unsupervised Learning - Customer Segmentation
+#
+# Author: Ronak Kumar
+#
+# Goal: Find natural customer groups in retail data using K-Means
+#       and turn those clusters into business-useful personas.
 
 import os, sys, warnings, numpy as np, pandas as pd
 import matplotlib.pyplot as plt, seaborn as sns
@@ -31,19 +21,22 @@ plt.style.use("seaborn-v0_8-whitegrid")
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-print("=" * 70)
-print("  PROJECT 3 — Unsupervised Learning: Customer Segmentation")
-print("  DecodeLabs Industrial Training | Batch 2026")
-print("=" * 70)
+print("=" * 60)
+print("  Project 3 - Customer Segmentation")
+print("=" * 60)
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  SECTION 1: SYNTHETIC RETAIL DATASET (22 features)
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n[1/8] Generating synthetic retail customer dataset (22 features) …")
+
+# ---------------------------------------------------------------
+#  STEP 1: Create synthetic retail dataset with 22 features
+# ---------------------------------------------------------------
+# Built the data with 4 hidden segments baked in, but the algorithm
+# doesn't know about them - it has to discover the groups on its own.
+
+print("\n>> Step 1: Building retail customer dataset (22 features)...")
 np.random.seed(42)
 N = 3000
 
-# Create 4 natural customer segments with distinct statistical signatures
+# these are the "true" segments the algorithm should hopefully find
 segments = {
     "high_value":   {"n": 500,  "income_m": 120000, "spend_m": 4000, "freq_m": 20, "age_m": 42},
     "budget":       {"n": 900,  "income_m": 35000,  "spend_m": 400,  "freq_m": 5,  "age_m": 28},
@@ -81,14 +74,14 @@ for seg, p in segments.items():
     dfs.append(seg_df)
 
 df = pd.concat(dfs, ignore_index=True).sample(frac=1, random_state=42).reset_index(drop=True)
-print(f"   Dataset: {df.shape[0]} customers × {df.shape[1]} features")
-print(f"   Numeric features: {df.select_dtypes(include=[np.number]).shape[1]}")
-print(f"   Categorical features: {df.select_dtypes(include=['object']).shape[1]}")
+print(f"   {df.shape[0]} customers, {df.shape[1]} features")
+print(f"   Numeric: {df.select_dtypes(include=[np.number]).shape[1]}, Categorical: {df.select_dtypes(include=['object']).shape[1]}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  SECTION 2: PREPROCESSING
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n[2/8] Preprocessing — encoding categoricals & scaling …")
+
+# ---------------------------------------------------------------
+#  STEP 2: Preprocessing
+# ---------------------------------------------------------------
+print("\n>> Step 2: Encoding categoricals and scaling...")
 
 df_processed = df.copy()
 le_dict = {}
@@ -97,58 +90,65 @@ for col in ["preferred_channel", "gender", "region"]:
     df_processed[col] = le.fit_transform(df_processed[col])
     le_dict[col] = le
 
-numeric_features = df_processed.columns.tolist()
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(df_processed)
-print(f"   Scaled feature matrix shape: {X_scaled.shape}")
-print(f"   Total features for PCA: {X_scaled.shape[1]}  (all 22 columns)")
+print(f"   Scaled matrix: {X_scaled.shape}")
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  SECTION 3: PCA — Dimensionality Reduction (22 → 2/3)
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n[3/8] Applying PCA — reducing 22 dimensions to 3 components …")
+
+# ---------------------------------------------------------------
+#  STEP 3: PCA - reduce 22 dimensions down to 3
+# ---------------------------------------------------------------
+# 22 features is too many to visualize or cluster effectively.
+# PCA finds the directions with the most variance and projects
+# the data onto those axes.
+
+print("\n>> Step 3: PCA dimensionality reduction (22D -> 3D)...")
 
 pca_full = PCA(random_state=42)
 pca_full.fit(X_scaled)
 
-# Explained variance plot
+# how much variance does each component explain?
 fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 cumulative_var = np.cumsum(pca_full.explained_variance_ratio_)
 
 axes[0].bar(range(1, len(pca_full.explained_variance_ratio_)+1),
             pca_full.explained_variance_ratio_, color="#3498db", alpha=0.8, edgecolor="white")
-axes[0].set_title("Individual Explained Variance per Component", fontsize=12, weight="bold")
-axes[0].set_xlabel("Principal Component")
+axes[0].set_title("Variance per Component", fontsize=12, weight="bold")
+axes[0].set_xlabel("Component")
 axes[0].set_ylabel("Variance Ratio")
 
 axes[1].plot(range(1, len(cumulative_var)+1), cumulative_var, "o-", color="#e74c3c", linewidth=2)
 axes[1].axhline(y=0.80, color="gray", linestyle="--", label="80% threshold")
 axes[1].axhline(y=0.90, color="gray", linestyle=":", label="90% threshold")
 n_80 = np.argmax(cumulative_var >= 0.80) + 1
-axes[1].axvline(x=n_80, color="#2ecc71", linestyle="--", alpha=0.7, label=f"{n_80} components for 80%")
-axes[1].set_title("Cumulative Explained Variance", fontsize=12, weight="bold")
-axes[1].set_xlabel("Number of Components")
-axes[1].set_ylabel("Cumulative Variance Ratio")
+axes[1].axvline(x=n_80, color="#2ecc71", linestyle="--", alpha=0.7, label=f"{n_80} comps for 80%")
+axes[1].set_title("Cumulative Variance", fontsize=12, weight="bold")
+axes[1].set_xlabel("# Components")
+axes[1].set_ylabel("Cumulative Ratio")
 axes[1].legend()
-fig.suptitle("PCA Analysis — How Many Components Do We Need?", fontsize=14, weight="bold")
+fig.suptitle("PCA Variance Analysis", fontsize=14, weight="bold")
 fig.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, "01_pca_variance.png"), dpi=150)
 plt.close(fig)
-print(f"   Components for 80% variance: {n_80}")
-print(f"   PC1: {pca_full.explained_variance_ratio_[0]*100:.1f}%  |  "
-      f"PC2: {pca_full.explained_variance_ratio_[1]*100:.1f}%  |  "
+print(f"   Need {n_80} components for 80% variance")
+print(f"   PC1: {pca_full.explained_variance_ratio_[0]*100:.1f}%, "
+      f"PC2: {pca_full.explained_variance_ratio_[1]*100:.1f}%, "
       f"PC3: {pca_full.explained_variance_ratio_[2]*100:.1f}%")
-print("   ✓ Saved: 01_pca_variance.png")
+print("   Saved: 01_pca_variance.png")
 
-# Apply PCA with 3 components for visualisation
+# keep 3 components for visualization
 pca_3d = PCA(n_components=3, random_state=42)
 X_pca = pca_3d.fit_transform(X_scaled)
-print(f"   Reduced shape: {X_pca.shape}  (from {X_scaled.shape[1]}D → 3D)")
+print(f"   Reduced: {X_scaled.shape[1]}D -> {X_pca.shape[1]}D")
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  SECTION 4: ELBOW METHOD — Finding optimal K
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n[4/8] Running Elbow Method (K = 1 to 10) …")
+
+# ---------------------------------------------------------------
+#  STEP 4: Elbow Method - find the right number of clusters
+# ---------------------------------------------------------------
+# Plot WCSS (within-cluster sum of squares) for K=1 to 10.
+# The "elbow" is where adding more clusters stops helping much.
+
+print("\n>> Step 4: Elbow method (K=1 to 10)...")
 
 K_range = range(1, 11)
 wcss = []
@@ -156,14 +156,14 @@ for k in K_range:
     km = KMeans(n_clusters=k, random_state=42, n_init=10, max_iter=300)
     km.fit(X_pca)
     wcss.append(km.inertia_)
-    print(f"   K={k:2d}  →  WCSS = {km.inertia_:>12.2f}")
+    print(f"   K={k:2d}  WCSS = {km.inertia_:.2f}")
 
 fig, ax = plt.subplots(figsize=(10, 6))
 ax.plot(K_range, wcss, "o-", linewidth=2.5, color="#e74c3c", markersize=8)
-ax.axvline(x=4, color="#2ecc71", linestyle="--", linewidth=2, label="Optimal K = 4 (elbow)")
-ax.set_title("Elbow Method — Within-Cluster Sum of Squares (WCSS)", fontsize=14, weight="bold")
+ax.axvline(x=4, color="#2ecc71", linestyle="--", linewidth=2, label="K=4 (elbow)")
+ax.set_title("Elbow Method - WCSS vs K", fontsize=14, weight="bold")
 ax.set_xlabel("Number of Clusters (K)", fontsize=12)
-ax.set_ylabel("WCSS (Inertia)", fontsize=12)
+ax.set_ylabel("WCSS", fontsize=12)
 ax.legend(fontsize=12)
 ax.grid(True, alpha=0.3)
 for k, w in zip(K_range, wcss):
@@ -171,12 +171,16 @@ for k, w in zip(K_range, wcss):
 fig.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, "02_elbow_method.png"), dpi=150)
 plt.close(fig)
-print("   ✓ Saved: 02_elbow_method.png")
+print("   Saved: 02_elbow_method.png")
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  SECTION 5: SILHOUETTE ANALYSIS — Mathematical proof of optimal K
-# ══════════════════════════════════════════════════════════════════════════════
-print("\n[5/8] Computing Silhouette Scores (K = 2 to 8) …")
+
+# ---------------------------------------------------------------
+#  STEP 5: Silhouette Analysis - confirm the optimal K
+# ---------------------------------------------------------------
+# Silhouette score measures how similar each point is to its own
+# cluster vs the nearest other cluster. Higher = better separation.
+
+print("\n>> Step 5: Silhouette scores (K=2 to 8)...")
 
 sil_scores = {}
 for k in range(2, 9):
@@ -184,31 +188,32 @@ for k in range(2, 9):
     labels = km.fit_predict(X_pca)
     score = silhouette_score(X_pca, labels)
     sil_scores[k] = score
-    print(f"   K={k}  →  Silhouette Score = {score:.4f}")
+    print(f"   K={k}  Silhouette = {score:.4f}")
 
-# ── Decision: K=4 based on COMBINED Elbow + Silhouette evidence ──────────────
-# The Elbow Method shows a clear bend at K=4 (WCSS drops steeply up to K=4,
-# then flattens). Silhouette at K=4 is strong (>0.45), confirming well-
-# separated clusters. We select K=4 for maximum business interpretability.
+# Picking K=4 based on both elbow and silhouette:
+# - Elbow shows clear bend at K=4 (WCSS drops steeply then flattens)
+# - Silhouette at K=4 is 0.50+ which is solid
+# - K=4 also makes the most business sense for segmentation
 best_k = 4
-print(f"\n   ★ Selected K = {best_k}")
-print(f"     Elbow evidence  : steep WCSS decline stops at K=4")
-print(f"     Silhouette (K=4): {sil_scores[4]:.4f} — strong cluster separation")
+print(f"\n   Going with K={best_k}")
+print(f"   Elbow: clear bend at K=4")
+print(f"   Silhouette at K=4: {sil_scores[4]:.4f}")
 
 fig, ax = plt.subplots(figsize=(10, 6))
-ax.bar(sil_scores.keys(), sil_scores.values(), color=["#e74c3c" if k==best_k else "#3498db" for k in sil_scores],
+ax.bar(sil_scores.keys(), sil_scores.values(),
+       color=["#e74c3c" if k==best_k else "#3498db" for k in sil_scores],
        edgecolor="white", alpha=0.85)
-ax.set_title("Silhouette Score Analysis — Mathematical Proof of Optimal K", fontsize=14, weight="bold")
-ax.set_xlabel("Number of Clusters (K)", fontsize=12)
+ax.set_title("Silhouette Scores by K", fontsize=14, weight="bold")
+ax.set_xlabel("K", fontsize=12)
 ax.set_ylabel("Silhouette Score", fontsize=12)
 for k, s in sil_scores.items():
     ax.text(k, s + 0.005, f"{s:.3f}", ha="center", fontsize=10, weight="bold")
 fig.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, "03_silhouette_scores.png"), dpi=150)
 plt.close(fig)
-print("   ✓ Saved: 03_silhouette_scores.png")
+print("   Saved: 03_silhouette_scores.png")
 
-# Detailed silhouette plot for best K
+# detailed silhouette plot
 fig, ax = plt.subplots(figsize=(10, 8))
 km_final = KMeans(n_clusters=best_k, random_state=42, n_init=10)
 cluster_labels = km_final.fit_predict(X_pca)
@@ -224,67 +229,73 @@ for i in range(best_k):
     ax.text(-0.05, y_lower + 0.5 * len(ith), f"Cluster {i}", fontsize=11, weight="bold")
     y_lower = y_upper + 10
 
-ax.axvline(x=sil_scores[best_k], color="red", linestyle="--", linewidth=2, label=f"Avg Score = {sil_scores[best_k]:.3f}")
-ax.set_title(f"Silhouette Plot for K = {best_k} Clusters", fontsize=14, weight="bold")
+ax.axvline(x=sil_scores[best_k], color="red", linestyle="--", linewidth=2, label=f"Avg = {sil_scores[best_k]:.3f}")
+ax.set_title(f"Silhouette Plot (K={best_k})", fontsize=14, weight="bold")
 ax.set_xlabel("Silhouette Coefficient", fontsize=12)
 ax.set_ylabel("Cluster")
 ax.legend(fontsize=12)
 fig.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, "04_silhouette_plot.png"), dpi=150)
 plt.close(fig)
-print("   ✓ Saved: 04_silhouette_plot.png")
+print("   Saved: 04_silhouette_plot.png")
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  SECTION 6: K-MEANS CLUSTERING (optimal K)
-# ══════════════════════════════════════════════════════════════════════════════
-print(f"\n[6/8] Running K-Means with K = {best_k} …")
+
+# ---------------------------------------------------------------
+#  STEP 6: Run K-Means with K=4
+# ---------------------------------------------------------------
+print(f"\n>> Step 6: K-Means clustering (K={best_k})...")
 df["cluster"] = cluster_labels
-print(f"   Cluster sizes:")
 for c in range(best_k):
-    print(f"     Cluster {c}: {(cluster_labels == c).sum()} customers ({(cluster_labels == c).mean()*100:.1f}%)")
+    n = (cluster_labels == c).sum()
+    print(f"   Cluster {c}: {n} customers ({n/len(df)*100:.1f}%)")
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  SECTION 7: VISUALISATION — 2D & 3D PCA scatter plots
-# ══════════════════════════════════════════════════════════════════════════════
-print(f"\n[7/8] Creating cluster visualisations …")
 
-# 2D scatter
+# ---------------------------------------------------------------
+#  STEP 7: Visualize clusters
+# ---------------------------------------------------------------
+print(f"\n>> Step 7: Plotting clusters...")
+
+# 2D view
 fig, ax = plt.subplots(figsize=(12, 9))
 scatter = ax.scatter(X_pca[:, 0], X_pca[:, 1], c=cluster_labels, cmap="viridis",
                      alpha=0.6, s=15, edgecolors="white", linewidth=0.3)
 centers = km_final.cluster_centers_
 ax.scatter(centers[:, 0], centers[:, 1], c="red", marker="X", s=250, edgecolors="black",
            linewidth=2, zorder=5, label="Centroids")
-ax.set_title("Customer Segments — 2D PCA Projection", fontsize=15, weight="bold")
-ax.set_xlabel(f"PC1 ({pca_3d.explained_variance_ratio_[0]*100:.1f}% variance)", fontsize=12)
-ax.set_ylabel(f"PC2 ({pca_3d.explained_variance_ratio_[1]*100:.1f}% variance)", fontsize=12)
+ax.set_title("Customer Segments (2D PCA)", fontsize=15, weight="bold")
+ax.set_xlabel(f"PC1 ({pca_3d.explained_variance_ratio_[0]*100:.1f}% var)", fontsize=12)
+ax.set_ylabel(f"PC2 ({pca_3d.explained_variance_ratio_[1]*100:.1f}% var)", fontsize=12)
 ax.legend(fontsize=12)
-plt.colorbar(scatter, ax=ax, label="Cluster ID")
+plt.colorbar(scatter, ax=ax, label="Cluster")
 fig.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, "05_clusters_2d.png"), dpi=150)
 plt.close(fig)
-print("   ✓ Saved: 05_clusters_2d.png")
+print("   Saved: 05_clusters_2d.png")
 
-# 3D scatter
+# 3D view
 fig = plt.figure(figsize=(14, 10))
 ax = fig.add_subplot(111, projection="3d")
-scatter3d = ax.scatter(X_pca[:, 0], X_pca[:, 1], X_pca[:, 2], c=cluster_labels,
-                       cmap="viridis", alpha=0.5, s=10)
+ax.scatter(X_pca[:, 0], X_pca[:, 1], X_pca[:, 2], c=cluster_labels,
+           cmap="viridis", alpha=0.5, s=10)
 ax.scatter(centers[:, 0], centers[:, 1], centers[:, 2], c="red", marker="X", s=300,
            edgecolors="black", linewidth=2)
 ax.set_xlabel(f"PC1 ({pca_3d.explained_variance_ratio_[0]*100:.1f}%)")
 ax.set_ylabel(f"PC2 ({pca_3d.explained_variance_ratio_[1]*100:.1f}%)")
 ax.set_zlabel(f"PC3 ({pca_3d.explained_variance_ratio_[2]*100:.1f}%)")
-ax.set_title("Customer Segments — 3D PCA Projection", fontsize=14, weight="bold")
+ax.set_title("Customer Segments (3D PCA)", fontsize=14, weight="bold")
 fig.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, "06_clusters_3d.png"), dpi=150)
 plt.close(fig)
-print("   ✓ Saved: 06_clusters_3d.png")
+print("   Saved: 06_clusters_3d.png")
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  SECTION 8: BUSINESS PERSONAS
-# ══════════════════════════════════════════════════════════════════════════════
-print(f"\n[8/8] Translating clusters into actionable business personas …\n")
+
+# ---------------------------------------------------------------
+#  STEP 8: Create business personas from clusters
+# ---------------------------------------------------------------
+# Looking at the average stats per cluster and giving them
+# human-readable names that a marketing team could actually use.
+
+print(f"\n>> Step 8: Building business personas...\n")
 
 profile_cols = ["age", "annual_income", "total_spend_12m", "purchase_frequency",
                 "avg_basket_value", "days_since_last_purchase", "num_categories_bought",
@@ -292,40 +303,40 @@ profile_cols = ["age", "annual_income", "total_spend_12m", "purchase_frequency",
                 "customer_tenure_months"]
 
 cluster_profiles = df.groupby("cluster")[profile_cols].mean().round(2)
-print("── Cluster Profiles (Mean Values) ──────────────────────────")
+print("Cluster averages:")
 print(cluster_profiles.to_string())
 
-# Assign persona names based on profiles
+# assign names based on what the numbers tell us
 persona_map = {}
 for c in range(best_k):
     row = cluster_profiles.loc[c]
     if row["total_spend_12m"] > 2500 and row["purchase_frequency"] > 15:
-        persona_map[c] = "💎 Premium Loyalists"
+        persona_map[c] = "Premium Loyalists"
     elif row["total_spend_12m"] < 300 and row["days_since_last_purchase"] > 200:
-        persona_map[c] = "💤 Dormant / At-Risk"
+        persona_map[c] = "Dormant / At-Risk"
     elif row["total_spend_12m"] < 600 and row["purchase_frequency"] < 8:
-        persona_map[c] = "🏷️ Budget Browsers"
+        persona_map[c] = "Budget Browsers"
     else:
-        persona_map[c] = "🛒 Mid-Tier Regulars"
+        persona_map[c] = "Mid-Tier Regulars"
 
 df["persona"] = df["cluster"].map(persona_map)
 
-print("\n── Business Personas ──────────────────────────────────────")
+print("\nBusiness Personas:")
 for c, persona in sorted(persona_map.items()):
     n = (df["cluster"] == c).sum()
     row = cluster_profiles.loc[c]
-    print(f"\n  Cluster {c} → {persona}")
-    print(f"    Size          : {n} customers ({n/len(df)*100:.1f}%)")
-    print(f"    Avg Income    : ${row['annual_income']:,.0f}")
-    print(f"    Avg Spend/12m : ${row['total_spend_12m']:,.0f}")
-    print(f"    Avg Frequency : {row['purchase_frequency']:.0f} purchases/year")
-    print(f"    Recency       : {row['days_since_last_purchase']:.0f} days since last purchase")
-    print(f"    Tenure        : {row['customer_tenure_months']:.0f} months")
+    print(f"\n  Cluster {c} -> {persona}")
+    print(f"    Size:      {n} customers ({n/len(df)*100:.1f}%)")
+    print(f"    Income:    ${row['annual_income']:,.0f}")
+    print(f"    Spend/yr:  ${row['total_spend_12m']:,.0f}")
+    print(f"    Frequency: {row['purchase_frequency']:.0f} orders/year")
+    print(f"    Recency:   {row['days_since_last_purchase']:.0f} days ago")
+    print(f"    Tenure:    {row['customer_tenure_months']:.0f} months")
 
-# Persona visualisation
+# distribution plots by persona
 fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 viz_cols = ["annual_income", "total_spend_12m", "purchase_frequency", "days_since_last_purchase"]
-viz_titles = ["Annual Income", "Total Spend (12 months)", "Purchase Frequency", "Days Since Last Purchase"]
+viz_titles = ["Annual Income", "Total Spend (12mo)", "Purchase Frequency", "Days Since Last Purchase"]
 colors_map = {0: "#e74c3c", 1: "#3498db", 2: "#2ecc71", 3: "#9b59b6"}
 
 for i, (col, title) in enumerate(zip(viz_cols, viz_titles)):
@@ -336,66 +347,51 @@ for i, (col, title) in enumerate(zip(viz_cols, viz_titles)):
     ax.set_title(title, fontsize=12, weight="bold")
     ax.legend(fontsize=8)
     ax.set_ylabel("Count")
-fig.suptitle("Feature Distribution by Customer Persona", fontsize=15, weight="bold", y=1.01)
+fig.suptitle("Distributions by Persona", fontsize=15, weight="bold", y=1.01)
 fig.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, "07_persona_distributions.png"), dpi=150)
 plt.close(fig)
-print("\n   ✓ Saved: 07_persona_distributions.png")
+print("\n   Saved: 07_persona_distributions.png")
 
-# Radar chart for persona comparison
+# radar chart comparing personas
 fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(projection="polar"))
 radar_cols = ["annual_income", "total_spend_12m", "purchase_frequency",
               "website_visits_monthly", "loyalty_points", "num_categories_bought"]
 normalized = cluster_profiles[radar_cols].copy()
 for col in radar_cols:
-    max_val = normalized[col].max()
-    if max_val > 0:
-        normalized[col] = normalized[col] / max_val
+    mx = normalized[col].max()
+    if mx > 0:
+        normalized[col] = normalized[col] / mx
 
 angles = np.linspace(0, 2 * np.pi, len(radar_cols), endpoint=False).tolist()
 angles += angles[:1]
 
 for c in range(best_k):
-    values = normalized.loc[c].tolist()
-    values += values[:1]
+    values = normalized.loc[c].tolist() + [normalized.loc[c].tolist()[0]]
     ax.plot(angles, values, "o-", linewidth=2, label=persona_map[c], color=colors_map.get(c, "#333"))
     ax.fill(angles, values, alpha=0.1, color=colors_map.get(c, "#333"))
 
 ax.set_xticks(angles[:-1])
 ax.set_xticklabels(radar_cols, fontsize=9)
-ax.set_title("Customer Persona Radar Chart", fontsize=14, weight="bold", pad=20)
+ax.set_title("Persona Comparison", fontsize=14, weight="bold", pad=20)
 ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), fontsize=10)
 fig.tight_layout()
 fig.savefig(os.path.join(OUTPUT_DIR, "08_persona_radar.png"), dpi=150)
 plt.close(fig)
-print("   ✓ Saved: 08_persona_radar.png")
+print("   Saved: 08_persona_radar.png")
 
-# Save segmented data
+# save everything
 output_path = os.path.join(OUTPUT_DIR, "segmented_customers.csv")
 df.to_csv(output_path, index=False)
-print(f"   ✓ Saved: segmented_customers.csv  ({len(df)} rows)")
+print(f"   Saved: segmented_customers.csv ({len(df)} rows)")
 
-print("\n" + "=" * 70)
-print("  PROJECT 3 — COMPLETE")
-print("=" * 70)
+print("\n" + "=" * 60)
+print("  Done! Project 3 complete.")
+print("=" * 60)
 print(f"""
-  Summary:
-  ────────
-  • Dataset       : {N:,} customers × {df.shape[1]-2} original features
-  • PCA           : {X_scaled.shape[1]}D → 3D (top 3 components)
-  • Optimal K     : {best_k} (validated by Elbow + Silhouette)
-  • Silhouette    : {sil_scores[best_k]:.4f}
-  • Personas      : {', '.join(set(persona_map.values()))}
-
-  Files generated:
-  ────────────────
-  01_pca_variance.png            — Explained variance by component
-  02_elbow_method.png            — WCSS elbow plot
-  03_silhouette_scores.png       — Silhouette scores per K
-  04_silhouette_plot.png         — Detailed silhouette diagram
-  05_clusters_2d.png             — 2D PCA cluster scatter
-  06_clusters_3d.png             — 3D PCA cluster scatter
-  07_persona_distributions.png   — Feature distributions by persona
-  08_persona_radar.png           — Radar chart persona comparison
-  segmented_customers.csv        — Full dataset with cluster labels
+  Results:
+  - {N} customers, {df.shape[1]-2} features -> PCA -> 3 components
+  - Optimal K = {best_k} (elbow + silhouette = {sil_scores[best_k]:.4f})
+  - Found 4 distinct customer segments:
+    {', '.join(set(persona_map.values()))}
 """)
